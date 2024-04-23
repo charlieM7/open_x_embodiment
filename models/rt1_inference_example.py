@@ -12,10 +12,10 @@ import numpy as np
 import tensorflow as tf
 
 import rt1
-
+# /usr/local/data/c.mori7/Repos/open_x_embodiment/rt_1_x_jax/checkpoint
 
 _CHECKPOINT_PATH = flags.DEFINE_string(
-    'checkpoint_path', None, 'Path to checkpoint.'
+    'checkpoint_path', "/usr/local/data/c.mori7/Repos/open_x_embodiment/rt_1_x_jax/checkpoint", 'Path to checkpoint.'
 )
 flags.mark_flag_as_required('checkpoint_path')
 
@@ -173,9 +173,11 @@ def main(argv):
       'image': jnp.ones((15, 300, 300, 3)),
       'natural_language_embedding': jnp.ones((15, 512)),
   }
-
-  print(policy.action(obs))
-
+  
+  actions = policy.action(obs)
+  print(actions)
+  action_vector = np.concatenate((actions['world_vector'], actions['rotation_delta'], actions['gripper_closedness_action']))
+  import pdb; pdb.set_trace()
 
 if __name__ == '__main__':
   app.run(main)
