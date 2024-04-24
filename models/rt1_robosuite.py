@@ -148,7 +148,8 @@ class RT1Policy:
         if np.sum(action['terminate_episode']) == 0:
             action['terminate_episode'] = np.zeros_like(action['terminate_episode'])
             action['terminate_episode'][-1] = 1
-            return action
+        
+        return action
 
 
 class RobosuiteEnv:
@@ -160,7 +161,7 @@ class RobosuiteEnv:
         has_renderer=True,
         has_offscreen_renderer=True,
         use_camera_obs=True,
-        camera_names="frontview" 
+        camera_names="agentview" 
     ):
         
         self.env_name = env_name
@@ -189,24 +190,32 @@ class RobosuiteEnv:
         self.env.viewer.set_camera(camera_id=0)
     
     def rotate_180(self, image):
-        return np.rot90(image, 2)
+        # return np.rot90(image, 2)
+        # return np.flipud(image)
+        # return image
+        image = np.flipud(image)
+        # return np.fliplr(image)
+        return image
 
     def take_action(self, action):
-        if action is None:
-            low, high = self.env.action_spec
-            action = np.random.uniform(low, high)
-            # import pdb; pdb.set_trace()
-
         frames = []
-        for i in range(15):
-            obs, reward, done, info = self.env.step(action)  # take action in the environment
-            rotated = self.rotate_180(obs['frontview_image'])
-            image = Image.fromarray(rotated)
-            # image.save(f'frame_{i}.png')
-            frames.append(rotated)
-            self.env.render()  # render on display
+        if action is None:
+            obs = self.env.observation_spec()
+            for i in range(15):
+                rotated = self.rotate_180(obs[self.camera_names + '_image'])
+                frames.append(rotated)
+                self.env.render() 
+            frames = jnp.array(frames)
+
+        else:
+            for i in range(15):
+                obs, reward, done, info = self.env.step(action)  # take action in the environment
+                rotated = self.rotate_180(obs[self.camera_names + '_image'])
+                frames.append(rotated)
+                self.env.render() 
+            frames = jnp.array(frames)[-15:]
         
-        return frames
+        return frames.astype(np.float32)
 
 def main(argv):
     del argv
@@ -236,27 +245,31 @@ def main(argv):
     env = RobosuiteEnv()
     terminate = 0
     robot_action = None
-    counter = 0
 
     while(not terminate):
-        print(counter)
         # import pdb; pdb.set_trace()
         frames = env.take_action(robot_action)
-        loaded_embeddings = np.load('embeddings/prompt_embeddings.npy')
+        # np.save('embeddings/frames.npy', frames)
+        loaded_embeddings = np.load('embeddings/prompt_embeddings2.npy')
 
         # Create a fake observation and run the policy.
         obs = {
             'image': frames,
             'natural_language_embedding': np.tile(loaded_embeddings, (15, 1)),
         }
-        
-        import pdb; pdb.set_trace()
-        actions = policy.action(obs)
-        robot_action = np.concatenate((actions['world_vector'], actions['rotation_delta'], actions['gripper_closedness_action']))
-        terminate = actions["terminate_episode"][-1]
 
-        print(policy.action(obs)["terminate_episode"][-1])
-        counter += 1
+        test_obs = {
+            'image': jnp.ones((15, 300, 300, 3)),
+            'natural_language_embedding': jnp.ones((15, 512)),
+        }
+
+        actions = policy.action(obs)
+        print(actions)
+        # import pdb; pdb.set_trace()
+        robot_action = np.concatenate((actions['world_vector'], actions['rotation_delta'], actions['gripper_closedness_action']))
+        # terminate = actions["terminate_episode"][-1]
+        terminate = 1 if all(actions["terminate_episode"] == [1,0,0]) else 0
+        print(str(actions["terminate_episode"]) + " " + str(terminate))
 
 
 if __name__ == '__main__':
