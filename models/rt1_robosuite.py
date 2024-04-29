@@ -1,3 +1,5 @@
+# base code from rt1_inference_example.py
+
 """Runs inference with a RT-1 model."""
 
 import copy
