@@ -290,6 +290,8 @@ def main(argv):
         seqlen=sequence_length,
     )
 
+    env = RobosuiteEnv()
+
     terminate = 0
     robot_action = None
     env.start_vid("figures/episode.mp4")
