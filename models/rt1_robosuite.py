@@ -17,6 +17,8 @@ import robosuite as suite
 from robosuite import load_controller_config
 from PIL import Image
 import os
+import matplotlib.pyplot as plt
+import imageio
 
 jax.config.update('jax_default_device', jax.devices('cpu')[0])
 
@@ -37,7 +39,6 @@ class RT1Policy:
         rng=None,
     ):
         """Initializes the policy.
-
         Args:
         checkpoint_path: A checkpoint point from which to load variables. Either
             this or variables must be provided.
@@ -161,9 +162,11 @@ class RobosuiteEnv:
         has_renderer=True,
         has_offscreen_renderer=True,
         use_camera_obs=True,
-        camera_names="agentview" 
+        camera_names="agentview",
+        reward_shaping=True, 
+        horizon=300,  
     ):
-        
+        #robosuite env variables
         self.env_name = env_name
         self.robots = robots
         self.controller_config = controller_config
@@ -171,6 +174,18 @@ class RobosuiteEnv:
         self.has_offscreen_renderer = has_offscreen_renderer
         self.use_camera_obs = use_camera_obs
         self.camera_names = camera_names
+        self.reward_shaping = reward_shaping
+        self.horizon = horizon
+
+        #envs for take action
+        self.frames = []
+        self.episode_rewards = []
+        self.done = False
+
+        #video recording envs
+        self.record_video = False
+        self.video_filename = None
+        self.video_writer = None
 
         if self.controller_config is None:
             self.controller_config = load_controller_config(default_controller='OSC_POSE')
@@ -182,40 +197,73 @@ class RobosuiteEnv:
             has_renderer=self.has_renderer,
             has_offscreen_renderer=self.has_offscreen_renderer,
             use_camera_obs=self.use_camera_obs,
-            camera_names = self.camera_names
+            camera_names = self.camera_names,
+            reward_shaping = self.reward_shaping,
+            horizon = self.horizon
         )
 
         # reset the environment
         self.env.reset()
         self.env.viewer.set_camera(camera_id=0)
-    
-    def rotate_180(self, image):
-        # return np.rot90(image, 2)
-        # return np.flipud(image)
-        # return image
+
+    # code to record episode
+    def start_vid(self, filename):
+        self.record_video = True
+        self.video_filename = filename
+        self.video_writer = imageio.get_writer(filename, fps=30)
+
+    def stop_vid(self):
+        self.record_video = False
+        if self.video_writer:
+            self.video_writer.close()
+
+    # image preprocessing
+    def flip(self, image):
         image = np.flipud(image)
-        # return np.fliplr(image)
         return image
 
     def take_action(self, action):
-        frames = []
         if action is None:
             obs = self.env.observation_spec()
             for i in range(15):
-                rotated = self.rotate_180(obs[self.camera_names + '_image'])
-                frames.append(rotated)
-                self.env.render() 
-            frames = jnp.array(frames)
+                rotated = self.flip(obs[self.camera_names + '_image'])
+                self.frames.append(rotated)
+                # self.env.render() 
+            self.frames = jnp.array(self.frames)
 
         else:
-            for i in range(15):
-                obs, reward, done, info = self.env.step(action)  # take action in the environment
-                rotated = self.rotate_180(obs[self.camera_names + '_image'])
-                frames.append(rotated)
-                self.env.render() 
-            frames = jnp.array(frames)[-15:]
+            obs, reward, done, info = self.env.step(action)  # take action in the environment
+            self.episode_rewards.append(reward)
+            self.done = done
+            rotated = self.flip(obs[self.camera_names + '_image'])
+            self.frames = self.frames.at[:-1].set(self.frames[1:])
+            self.frames = self.frames.at[-1].set(rotated)
+            # self.env.render() 
+
+        if self.record_video:
+            self.video_writer.append_data(rotated)
         
-        return frames.astype(np.float32)
+        return self.frames.astype(np.float32)
+
+    def plot_reward(self):
+        filename = f'figures/reward_{self.horizon}.txt'
+        with open(filename, 'w') as file:
+            for reward in self.episode_rewards:
+                file.write(str(reward) + '\n')
+        # Plot episode rewards
+        # values, base = np.histogram(self.episode_rewards, bins=40)
+        cumulative_rewards = np.cumsum(self.episode_rewards)
+        plt.plot(cumulative_rewards)
+        # plt.plot(self.episode_rewards)
+        plt.xlabel('Step')
+        plt.ylabel('Reward')
+        plt.title('Episode Cumulative Rewards')
+        plt.grid(True)
+
+        # Save plot as an image file
+        plt.savefig(f'figures/episode_{self.horizon}_rewards.png')
+        plt.show()
+
 
 def main(argv):
     del argv
@@ -242,65 +290,34 @@ def main(argv):
         seqlen=sequence_length,
     )
 
-    env = RobosuiteEnv()
     terminate = 0
     robot_action = None
+    env.start_vid("figures/episode.mp4")
 
-    while(not terminate):
-        # import pdb; pdb.set_trace()
+    while(not terminate and not env.done):
         frames = env.take_action(robot_action)
-        # np.save('embeddings/frames.npy', frames)
-        loaded_embeddings = np.load('embeddings/prompt_embeddings2.npy')
+        loaded_embeddings = np.load('embeddings/prompt_embeddings7.npy')
 
-        # Create a fake observation and run the policy.
         obs = {
             'image': frames,
             'natural_language_embedding': np.tile(loaded_embeddings, (15, 1)),
         }
 
-        test_obs = {
-            'image': jnp.ones((15, 300, 300, 3)),
-            'natural_language_embedding': jnp.ones((15, 512)),
-        }
-
         actions = policy.action(obs)
-        print(actions)
-        # import pdb; pdb.set_trace()
+        # uncomment to flip y-axis 
+        # x = np.array([actions['world_vector'][0]*1, actions['world_vector'][1]*-1, actions['world_vector'][2]])
+        # y = np.array([actions['rotation_delta'][0]*1, actions['rotation_delta'][1]*-1, actions['rotation_delta'][2]])
+        # robot_action = np.concatenate((x, y, actions['gripper_closedness_action']))
+
         robot_action = np.concatenate((actions['world_vector'], actions['rotation_delta'], actions['gripper_closedness_action']))
-        # terminate = actions["terminate_episode"][-1]
+        print(robot_action)
+
         terminate = 1 if all(actions["terminate_episode"] == [1,0,0]) else 0
         print(str(actions["terminate_episode"]) + " " + str(terminate))
+    
+    env.plot_reward()
+    env.stop_vid()
 
 
 if __name__ == '__main__':
     app.run(main)
-
-
-###########################################################################3
-# config = load_controller_config(default_controller='OSC_POSE')
-# # create environment instance
-# env = suite.make(
-#     env_name="Lift", # try with other tasks like "Stack" and "Door"
-#     robots="Panda",  # try with other robots like "Sawyer" and "Jaco"
-#     controller_configs=config,
-#     has_renderer=True,
-#     has_offscreen_renderer=True,
-#     use_camera_obs=True,
-# )
-
-# # reset the environment
-# env.reset()
-# env.viewer.set_camera(camera_id=0)
-# low, high = env.action_spec
-# action = np.random.uniform(low, high)
-
-# while(True):
-#     frames = []
-#     for i in range(1000):
-#         action = np.random.uniform(low, high)
-#         obs, reward, done, info = env.step(action)  # take action in the environment
-#         image = Image.fromarray(obs['agentview_image'])
-#         image.save(f'frame_{i}.png')
-#         # import pdb; pdb.set_trace()
-#         env.render()  # render on display
-    

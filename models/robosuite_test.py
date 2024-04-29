@@ -1,3 +1,6 @@
+# Used to test robosuite
+# Base code from https://robosuite.ai/docs/quickstart.html
+
 import numpy as np
 import robosuite as suite
 from robosuite import load_controller_config
@@ -5,7 +8,10 @@ from PIL import Image
 import os
 
 def rotate_180(image):
-    return np.rot90(image, 2)
+    image = np.flipud(image)
+    # return np.fliplr(image)
+    return image
+    # return np.rot90(image, 2)
 
 # Check if MUJOCO_EGL_DEVICE_ID is set
 if "MUJOCO_EGL_DEVICE_ID" in os.environ:
@@ -31,28 +37,32 @@ else:
 config = load_controller_config(default_controller='OSC_POSE')
 # create environment instance
 env = suite.make(
-    env_name="Lift", # try with other tasks like "Stack" and "Door"
-    robots="Panda",  # try with other robots like "Sawyer" and "Jaco"
+    env_name="Door", 
+    robots="Panda", 
     controller_configs=config,
     has_renderer=True,
     has_offscreen_renderer=True,
     use_camera_obs=True,
-    camera_names="frontview" 
+    camera_names="agentview" 
 )
 
 # reset the environment
 env.reset()
-env.viewer.set_camera(camera_id=0)
+env.viewer.set_camera(camera_id=1)
 low, high = env.action_spec
-action = np.random.uniform(low, high)
+start_obs = env.observation_spec()
 
+action = np.random.uniform(low, high)
+action = np.array([0,1,0,0,0,0,-1])
+
+# import pdb; pdb.set_trace()
 while(True):
     frames = []
-    for i in range(1000):
-        action = np.random.uniform(low, high)
+    for i in range(10):
+        # action = np.random.uniform(low, high)
         obs, reward, done, info = env.step(action)  # take action in the environment
 
-        rotated = rotate_180(obs['frontview_image'])
+        rotated = rotate_180(obs['agentview_image'])
         image = Image.fromarray(rotated)
         image.save(f'frame_{i}.png')
         import pdb; pdb.set_trace()

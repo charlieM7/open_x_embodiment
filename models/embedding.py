@@ -1,3 +1,5 @@
+# base code from https://www.tensorflow.org/hub/tutorials/semantic_similarity_with_tf_hub_universal_encoder
+
 from absl import logging
 
 import tensorflow as tf
@@ -19,16 +21,13 @@ print ("module %s loaded" % module_url)
 def embed(input):
   return model(input)
 
-
-# word = "Elephant"
-# sentence = "I am a sentence for which I would like to get its embedding."
-# paragraph = (
-#     "Universal Sentence Encoder embeddings also support short paragraphs. "
-#     "There is no hard limit on how long the paragraph is. Roughly, the longer "
-#     "the more 'diluted' the embedding will be.")
-# messages = [word, sentence, paragraph]
-
-prompt = "Pick up the red cube."
+# prompt = "Grasp the red cube then lift it in the air"
+# prompt = "Pick up the red cube."
+# prompt = "Open the door."
+# prompt = "Grip the red block and raise it up off the table."
+# prompt = "Grip the yellow door handle."
+# prompt = "Move to the right"
+prompt = "Open the door on the left"
 messages = [prompt]
 
 # Reduce logging output.
@@ -37,13 +36,8 @@ logging.set_verbosity(logging.ERROR)
 message_embeddings = embed(messages)
 jax_embeddings = jnp.array(message_embeddings)
 
-# Save embeddings
-# jax.save('embeddings/prompt_embeddings.npy', jax_embeddings)
-
-# np.save('embeddings/prompt_embeddings.npy', jax_embeddings)
-loaded_embeddings = np.load('embeddings/prompt_embeddings.npy')
-repeated_embeddings = np.tile(loaded_embeddings, (15, 1))
-import pdb; pdb.set_trace()
+np.save('embeddings/prompt_embeddings7.npy', jax_embeddings)
+repeated_embeddings = np.tile(jax_embeddings, (15, 1))
 
 for i, message_embedding in enumerate(np.array(message_embeddings).tolist()):
   print("Message: {}".format(messages[i]))
