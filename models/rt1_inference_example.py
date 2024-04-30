@@ -12,10 +12,12 @@ import numpy as np
 import tensorflow as tf
 
 import rt1
+# /usr/local/data/c.mori7/Repos/open_x_embodiment/rt_1_x_jax/checkpoint
 
+jax.config.update('jax_default_device', jax.devices('cpu')[0])
 
 _CHECKPOINT_PATH = flags.DEFINE_string(
-    'checkpoint_path', None, 'Path to checkpoint.'
+    'checkpoint_path', "/usr/local/data/c.mori7/Repos/open_x_embodiment/rt_1_x_jax/checkpoint", 'Path to checkpoint.'
 )
 flags.mark_flag_as_required('checkpoint_path')
 
@@ -168,14 +170,28 @@ def main(argv):
       seqlen=sequence_length,
   )
 
-  # Create a fake observation and run the policy.
+  loaded_embeddings = np.load('embeddings/prompt_embeddings.npy')
+  loaded_frames = np.load('embeddings/frames.npy')
+
+  # # Create a fake observation and run the policy.
+  # obs = {
+  #     'image': jnp.ones((15, 300, 300, 3)),
+  #     'natural_language_embedding': jnp.ones((15, 512)),
+  # }
+
   obs = {
-      'image': jnp.ones((15, 300, 300, 3)),
-      'natural_language_embedding': jnp.ones((15, 512)),
+      'image': loaded_frames,
+      'natural_language_embedding': np.tile(loaded_embeddings, (15, 1)),
   }
-
-  print(policy.action(obs))
-
+  
+  actions = policy.action(obs)
+  print(actions)
+  x = np.array([1, 0, 0])
+  y = np.array([0,0,0])
+  # action_vector = np.concatenate((actions['world_vector'], actions['rotation_delta'], actions['gripper_closedness_action']))
+  action_vector = np.concatenate((x, y, actions['gripper_closedness_action']))
+  test = jnp.ones((15, 300, 300, 3))
+  import pdb; pdb.set_trace()
 
 if __name__ == '__main__':
   app.run(main)
